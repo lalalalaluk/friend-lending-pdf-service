@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json  ← 移除此行，package-lock.json 應該要提交到 Git
 
 # Environment variables
 .env
