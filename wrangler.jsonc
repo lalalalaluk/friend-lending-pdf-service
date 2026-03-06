@@ -1,0 +1,30 @@
+{
+  "name": "friend-lending-pdf-service",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-23",
+  "containers": [
+    {
+      "class_name": "PDFServiceContainer",
+      "image": "./Dockerfile",
+      "max_instances": 3
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PDF_SERVICE",
+        "class_name": "PDFServiceContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PDFServiceContainer"]
+    }
+  ],
+  "vars": {
+    "NODE_ENV": "production",
+    "LOG_LEVEL": "info"
+  }
+}

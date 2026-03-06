@@ -1,6 +1,6 @@
 # 整合指南：將 PDF 服務整合到 Supabase Edge Function
 
-本指南說明如何將 Railway.app 上的 PDF 服務整合到現有的 Supabase Edge Function 中。
+本指南說明如何將 Cloudflare Containers 上的 PDF 服務整合到現有的 Supabase Edge Function 中。
 
 ## 整合架構
 
@@ -11,9 +11,9 @@ Client (瀏覽器)
     ↓
 Supabase Edge Function (encrypt-and-upload-pdf)
     ↓
-    POST PDF 到 Railway PDF Service
+    POST PDF 到 Cloudflare PDF Service
     ↓
-Railway PDF Service
+Cloudflare Container (PDF Service)
     ├─ 添加浮水印
     ├─ 加密 PDF
     └─ 返回加密 PDF + 密碼
@@ -25,53 +25,33 @@ Supabase Edge Function
     返回密碼給客戶端
 ```
 
-## 步驟 1: 部署 PDF 服務到 Railway
+## 步驟 1: 部署 PDF 服務到 Cloudflare
 
-### 1.1 推送代碼到 GitHub
+### 1.1 安裝 wrangler 並登入
+
+```bash
+npm install -g wrangler
+wrangler login
+```
+
+### 1.2 設定 Secrets 並部署
 
 ```bash
 cd pdf-service
 
-# 初始化 Git（如果還沒有）
-git init
-git add .
-git commit -m "Initial commit: PDF encryption and watermark service"
+# 設定敏感環境變數
+wrangler secret put API_KEY
+wrangler secret put PDF_ENCRYPTION_SALT
 
-# 推送到 GitHub
-git remote add origin https://github.com/YOUR_USERNAME/friend-lending-system.git
-git push origin main
+# 部署
+npm run deploy
 ```
 
-### 1.2 在 Railway 上部署
+### 1.3 取得服務 URL
 
-1. 訪問 https://railway.app
-2. 使用 GitHub 登入
-3. 點擊 "New Project" → "Deploy from GitHub repo"
-4. 選擇 `friend-lending-system` 倉庫
-5. Railway 會自動檢測到 Dockerfile 並開始構建
-
-### 1.3 設定環境變數
-
-在 Railway Dashboard → Settings → Variables 添加：
-
-```bash
-NODE_ENV=production
-PORT=3001
-API_KEY=<生成一個強隨機密鑰>
-PDF_ENCRYPTION_SALT=<和 Supabase 一致的 Salt>
-LOG_LEVEL=info
+部署成功後，Cloudflare 會提供一個 URL：
 ```
-
-生成 API_KEY：
-```bash
-openssl rand -hex 32
-```
-
-### 1.4 取得服務 URL
-
-部署成功後，Railway 會提供一個 URL：
-```
-https://pdf-service-production-xxxx.up.railway.app
+https://friend-lending-pdf-service.<subdomain>.workers.dev
 ```
 
 複製這個 URL，下一步會用到。
@@ -93,7 +73,7 @@ supabase functions new encrypt-and-upload-pdf
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const RAILWAY_PDF_SERVICE = Deno.env.get('RAILWAY_PDF_SERVICE_URL')!;
+const PDF_SERVICE = Deno.env.get('PDF_SERVICE_URL')!;
 const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')!;
 
 const corsHeaders = {
@@ -119,10 +99,10 @@ serve(async (req) => {
 
     console.log('📄 收到 PDF 處理請求:', { contractId, contractNumber });
 
-    // 2. 發送到 Railway PDF Service 進行加密和浮水印
+    // 2. 發送到 PDF Service 進行加密和浮水印
     console.log('🔄 發送到 PDF 服務進行處理...');
 
-    const pdfServiceResponse = await fetch(`${RAILWAY_PDF_SERVICE}/api/pdf/process`, {
+    const pdfServiceResponse = await fetch(`${PDF_SERVICE}/api/pdf/process`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -255,8 +235,8 @@ serve(async (req) => {
 在 Supabase Dashboard → Settings → Edge Functions → Secrets 添加：
 
 ```bash
-RAILWAY_PDF_SERVICE_URL=https://pdf-service-production-xxxx.up.railway.app
-PDF_SERVICE_API_KEY=<Railway 上設定的 API_KEY>
+PDF_SERVICE_URL=https://friend-lending-pdf-service.<subdomain>.workers.dev
+PDF_SERVICE_API_KEY=<Cloudflare 上設定的 API_KEY>
 ```
 
 ### 2.4 部署 Edge Function
@@ -287,7 +267,7 @@ export const generateAndUploadPDF = async (contract, lenderName, privateData = n
 
     console.log('調用 Edge Function 進行加密和上傳...');
 
-    // 3. 調用 Edge Function（會自動調用 Railway PDF Service）
+    // 3. 調用 Edge Function（會自動調用 PDF Service）
     const { data: edgeFunctionData, error: edgeFunctionError } = await supabase.functions
       .invoke('encrypt-and-upload-pdf', {
         body: {
@@ -358,7 +338,7 @@ npm start
 2. 設定本地 Edge Function 環境變數：
 ```bash
 # supabase/functions/.env
-RAILWAY_PDF_SERVICE_URL=http://localhost:3001
+PDF_SERVICE_URL=http://localhost:3001
 PDF_SERVICE_API_KEY=dev-api-key-for-testing
 ```
 
@@ -377,24 +357,24 @@ supabase start
 
 ### 4.3 檢查日誌
 
-**Railway 日誌：**
-- Railway Dashboard → Deployments → View Logs
+**Cloudflare 日誌：**
+- `wrangler tail` 或 Cloudflare Dashboard → Workers → Logs
 
 **Supabase Edge Function 日誌：**
 - Supabase Dashboard → Edge Functions → Logs
 
 ## 步驟 5: 監控和維護
 
-### 5.1 設定告警
+### 5.1 監控
 
-在 Railway Dashboard 設定告警：
-- CPU 使用率 > 80%
-- 內存使用率 > 80%
-- 錯誤率 > 5%
+使用 Cloudflare Dashboard 或 `wrangler tail` 監控：
+- 請求數量和錯誤率
+- Container 狀態（running/sleeping）
+- Cold start 延遲
 
 ### 5.2 定期檢查
 
-- 每週檢查 Railway 日誌
+- 每週檢查 Cloudflare 日誌
 - 每月檢查成本使用
 - 每季度更新依賴套件
 
@@ -402,13 +382,13 @@ supabase start
 
 ### PDF 服務無響應
 
-1. 檢查 Railway 服務狀態
-2. 檢查環境變數是否正確
-3. 查看 Railway 日誌
+1. 檢查 Cloudflare Container 狀態：`wrangler tail`
+2. 檢查 Secrets 是否正確：`wrangler secret list`
+3. 首次請求可能需要 2-3 秒 cold start
 
 ### Edge Function 調用失敗
 
-1. 確認 RAILWAY_PDF_SERVICE_URL 正確
+1. 確認 PDF_SERVICE_URL 正確
 2. 確認 PDF_SERVICE_API_KEY 正確
 3. 檢查 Edge Function 日誌
 
@@ -416,17 +396,14 @@ supabase start
 
 1. 檢查 PDF_ENCRYPTION_SALT 是否一致
 2. 確認 qpdf 已正確安裝在 Docker 中
-3. 查看 Railway 日誌中的錯誤訊息
+3. 查看 `wrangler tail` 日誌中的錯誤訊息
 
 ## 成本監控
 
-定期檢查 Railway Dashboard 的成本使用：
-- Project → Usage
+Cloudflare Workers Paid Plan $5/月，多個微服務共享。
+Container 按秒計費，10 分鐘無請求自動休眠（scale-to-zero）。
 
-預期成本：
-- 每月 10 次處理：< $0.01
-- 每月 100 次處理：< $0.10
-- 每月 1000 次處理：< $1.00
+預期成本：對於朋友借貸系統的使用量（每月 10-50 次），遠低於 Plan 上限。
 
 ## 完成！
 

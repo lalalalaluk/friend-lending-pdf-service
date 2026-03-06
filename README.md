@@ -153,64 +153,54 @@ X-Request-ID: unique-request-id (optional)
 }
 ```
 
-## Railway.app 部署
+## Cloudflare Containers 部署
 
 ### 1. 準備工作
 
-確保你的代碼已推送到 GitHub。
+安裝 wrangler CLI 並登入 Cloudflare：
+
+```bash
+npm install -g wrangler
+wrangler login
+```
 
 ### 2. 部署步驟
 
-1. **訪問 Railway.app**
-   - 前往 https://railway.app
-   - 使用 GitHub 登入
-
-2. **創建新專案**
-   - 點擊 "New Project"
-   - 選擇 "Deploy from GitHub repo"
-   - 選擇 `friend-lending-system` 倉庫
-   - 選擇 `pdf-service` 目錄
-
-3. **設定環境變數**
-
-   在 Railway Dashboard → Settings → Variables 添加：
-
+1. **設定 Secrets**
    ```bash
-   NODE_ENV=production
-   PORT=3001
-   API_KEY=<生成一個強隨機密鑰>
-   PDF_ENCRYPTION_SALT=<和 Supabase 一致>
-   LOG_LEVEL=info
+   cd pdf-service
+   wrangler secret put API_KEY
+   wrangler secret put PDF_ENCRYPTION_SALT
    ```
 
-   生成 API_KEY：
+2. **部署**
    ```bash
-   openssl rand -hex 32
+   npm run deploy
+   # 或
+   wrangler deploy
    ```
 
-4. **部署**
-
-   Railway 會自動：
-   - 檢測到 Dockerfile
+   Wrangler 會自動：
    - 構建 Docker 映像
-   - 部署服務
+   - 上傳到 Cloudflare
+   - 部署 Worker + Container
    - 分配 URL
 
-5. **取得服務 URL**
+3. **取得服務 URL**
 
-   部署成功後，Railway 會提供一個 URL：
+   部署成功後，Cloudflare 會提供一個 URL：
    ```
-   https://pdf-service-production-xxxx.up.railway.app
+   https://friend-lending-pdf-service.<subdomain>.workers.dev
    ```
 
 ### 3. 測試部署
 
 ```bash
 # 測試健康檢查
-curl https://your-service.railway.app/health
+curl https://friend-lending-pdf-service.<subdomain>.workers.dev/health
 
 # 測試 PDF 處理（需要 API Key）
-curl -X POST https://your-service.railway.app/api/pdf/process \
+curl -X POST https://friend-lending-pdf-service.<subdomain>.workers.dev/api/pdf/process \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key" \
   -d '{"pdfBase64":"...","contractId":"...","contractNumber":"..."}'
@@ -223,10 +213,10 @@ curl -X POST https://your-service.railway.app/api/pdf/process \
 ```typescript
 // supabase/functions/encrypt-and-upload-pdf/index.ts
 
-const RAILWAY_PDF_SERVICE = Deno.env.get('RAILWAY_PDF_SERVICE_URL')!;
+const PDF_SERVICE = Deno.env.get('PDF_SERVICE_URL')!;
 const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')!;
 
-const response = await fetch(`${RAILWAY_PDF_SERVICE}/api/pdf/process`, {
+const response = await fetch(`${PDF_SERVICE}/api/pdf/process`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -261,36 +251,36 @@ const { encryptedPdfBase64, password } = result.data;
 
 ## 成本估算
 
-Railway.app 計費方式：
+Cloudflare Workers Paid Plan ($5/月) 包含：
 
-- **免費額度**：$5/月
-- **計費方式**：按秒計費（$0.000231/秒）
-- **自動休眠**：閒置時不計費
+- **Container 運行時間**：按秒計費
+- **Scale-to-zero**：10 分鐘無請求自動休眠（不計費）
+- **多個微服務共享** 同一個 $5/月 Plan
 
 **實際場景估算：**
 ```
 每次處理時間：2 秒
 每月處理次數：10 次
-月費：$0.000231 × 2 × 10 = $0.00462
+Cold start：首次約 2-3 秒
 
-結論：幾乎免費 🎉
+結論：遠低於 $5/月的 Plan 上限
 ```
 
 ## 監控與日誌
 
-### Railway 內建監控
+### Cloudflare Dashboard 監控
 
-Railway Dashboard 提供：
-- CPU/內存使用率
-- 網路流量
-- 請求數量
+Workers & Pages Dashboard 提供：
+- 請求次數
+- 錯誤率
+- Container 狀態
 - 實時日誌
 
 ### 查看日誌
 
 ```bash
-# 在 Railway Dashboard
-Project → Deployments → View Logs
+# 使用 wrangler 查看即時日誌
+wrangler tail
 ```
 
 ## 疑難排解
@@ -312,11 +302,11 @@ Project → Deployments → View Logs
 
 ### 冷啟動慢
 
-首次請求可能需要 5 秒冷啟動時間：
+首次請求可能需要 2-3 秒冷啟動時間：
 
-- 這是 Railway 自動休眠機制
-- 後續請求會很快（1-2 秒）
-- 如需保持服務運行，可升級 Railway 方案
+- 這是 Cloudflare Containers 的 scale-to-zero 機制（10 分鐘無請求後休眠）
+- 後續請求會很快（<1 秒）
+- Container 在活躍期間保持 warm 狀態
 
 ## 安全建議
 

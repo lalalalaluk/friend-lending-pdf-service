@@ -2,7 +2,7 @@
 
 ## 📋 專案概述
 
-這是一個獨立的 Node.js 服務，專為朋友借貸系統提供 PDF 加密和浮水印功能。服務設計為部署在 Railway.app 上，通過 API 與 Supabase Edge Functions 整合。
+這是一個獨立的 Node.js 服務，專為朋友借貸系統提供 PDF 加密和浮水印功能。服務部署在 Cloudflare Containers 上，通過 API 與 Supabase Edge Functions 整合。
 
 ## ✅ 已完成的功能
 
@@ -23,7 +23,7 @@
 
 ### 部署配置
 - ✅ **Dockerfile**：基於 Node.js 20 Alpine，包含 qpdf
-- ✅ **railway.json**：Railway.app 部署配置
+- ✅ **wrangler.jsonc**：Cloudflare Containers 部署配置
 - ✅ **環境變數管理**：使用 .env 文件
 - ✅ **CORS 支援**：允許跨域請求
 - ✅ **健康檢查**：Docker HEALTHCHECK
@@ -74,7 +74,7 @@ pdf-service/
 │   └── unit/
 │       └── passwordGen.test.js    ✅ 單元測試
 ├── Dockerfile                     ✅ Docker 配置
-├── railway.json                   ✅ Railway 配置
+├── wrangler.jsonc                 ✅ Cloudflare 配置
 ├── package.json                   ✅ 依賴管理
 ├── .env.example                   ✅ 環境變數範例
 ├── .gitignore                     ✅ Git 忽略
@@ -99,13 +99,12 @@ pdf-service/
 
 ## 🚀 部署流程
 
-### 選項 1: Railway.app（推薦）
+### 選項 1: Cloudflare Containers（推薦）
 
-1. **推送到 GitHub**
-2. **在 Railway 創建專案**
-3. **連接 GitHub 倉庫**
-4. **設定環境變數**
-5. **自動部署**
+1. **安裝 wrangler 並登入**
+2. **設定 Secrets**（`wrangler secret put`）
+3. **部署**（`wrangler deploy`）
+4. **自動構建 Docker 並部署**
 
 詳見：[DEPLOY.md](./DEPLOY.md)
 
@@ -129,25 +128,21 @@ docker run -p 3001:3001 --env-file .env pdf-service
 - CPU 使用：低（非密集運算）
 
 ### 冷啟動
-- Railway.app：~3-5 秒
+- Cloudflare Containers：~2-3 秒（scale-to-zero 後首次請求）
 - 後續請求：<1 秒
 
 ## 💰 成本分析
 
-### Railway.app 計費
+### Cloudflare Workers Paid Plan
 
-**免費額度：** $5/月
+**月費：** $5/月（多個微服務共享）
 
-**實際成本估算：**
+**優勢：**
+- Scale-to-zero：10 分鐘無請求自動休眠
+- 多個微服務共享同一個 Plan
+- Container 按秒計費，休眠不計費
 
-| 使用量 | 處理時間 | 月成本 | 說明 |
-|--------|----------|--------|------|
-| 10 次 | 20 秒 | $0.00 | 幾乎免費 |
-| 100 次 | 200 秒 | $0.05 | 非常低 |
-| 1,000 次 | 2,000 秒 | $0.50 | 極低 |
-| 10,000 次 | 20,000 秒 | $5.00 | 仍在免費額度內 |
-
-**結論：** 對於朋友借貸系統的使用量（估計每月 10-50 次），**幾乎完全免費**。
+**結論：** 對於朋友借貸系統的使用量（估計每月 10-50 次），成本極低。多個微服務共享 $5/月 Plan 比單獨付 Railway $5/月更划算。
 
 ## 🔗 整合流程
 
@@ -159,7 +154,7 @@ docker run -p 3001:3001 --env-file .env pdf-service
 
 ```typescript
 // supabase/functions/encrypt-and-upload-pdf/index.ts
-const response = await fetch(`${RAILWAY_PDF_SERVICE}/api/pdf/process`, {
+const response = await fetch(`${PDF_SERVICE}/api/pdf/process`, {
   method: 'POST',
   headers: {
     'X-API-Key': PDF_SERVICE_API_KEY
@@ -232,7 +227,7 @@ const { pdfUrl, password } = data.data;
 | PDF 加密 | ✅ | 使用 qpdf，256-bit AES |
 | PDF 浮水印 | ✅ | 使用 pdf-lib，支援多種位置 |
 | 獨立服務 | ✅ | 完全獨立，易於維護 |
-| Serverless 部署 | ✅ | Railway.app，自動擴展 |
+| Serverless 部署 | ✅ | Cloudflare Containers，自動擴展 |
 | 成本優化 | ✅ | 幾乎免費（<$0.01/月） |
 | 易於整合 | ✅ | RESTful API，詳細文檔 |
 | 安全性 | ✅ | API Key、限流、加密 |
@@ -280,7 +275,7 @@ const { pdfUrl, password } = data.data;
    - 驗證浮水印
 
 4. **監控運行狀況**
-   - Railway Dashboard
+   - Cloudflare Dashboard / `wrangler tail`
    - Supabase Logs
 
 ---
